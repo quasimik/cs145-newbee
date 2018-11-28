@@ -57,7 +57,7 @@ CATEGORICAL_ONEHOT = ["attributes_Ambience", "attributes_BestNights",
 											"attributes_BusinessParking", "attributes_DietaryRestrictions", 
 											"attributes_GoodForMeal", "attributes_HairSpecializesIn", "attributes_Music" ]
 
-class Preprocess_train(object):
+class Preprocess(object):
 	def __init__(self):
 		self.reviews = pd.read_csv(FILE_REVIEWS, index_col="review_id")
 		self.users = pd.read_csv(FILE_USERS, index_col="user_id")
@@ -160,7 +160,7 @@ class Preprocess_train(object):
 		dump(self.pca, 'data/pca_dump.joblib') 
 
 if __name__ == "__main__":
-	pp = Preprocess_train()
+	pp = Preprocess()
 	pp.drop_cols() # drop irrelevant features
 	pp.sample(frac_sample=0.001, frac_seed=1) # sample a portion of the data for testing
 	pp.combine_data() # pull in user and business data into each review
