@@ -14,27 +14,25 @@ FILE_USERS = "data/users.csv"
 FILE_BUSINESSES = "data/business.csv"
 FILE_OUT_ROOT = "data/pp"
 
-DROP_REVIEWS = ["text"]
+DROP_REVIEWS = ["cool", "date", "funny", "text", "useful"] # drop all since we don't have this info in the test data
 DROP_USERS = ["name"]
 DROP_BUSINESSES = ["address", "attributes", "name", "postal_code", "hours", "hours_Friday", "hours_Monday", 
 								 "hours_Saturday", "hours_Sunday", "hours_Thursday", "hours_Tuesday", "hours_Wednesday"]
 
 # "numerical" includes one-hot categorical
 NUMERICAL = [
-							# reviews
-							"cool_review", "funny_review", "useful_review",
 							
 							# users
 							"average_stars", "compliment_cool", "compliment_cute", 
 							"compliment_funny", "compliment_hot", "compliment_list", 
 							"compliment_more", "compliment_note", "compliment_photos", 
 							"compliment_plain", "compliment_profile", "compliment_writer", 
-							"cool_user", "elite", "fans", "funny_user", "review_count_review", "useful_user", 
+							"cool", "elite", "fans", "funny", "review_count_review", "useful", 
 							
 							# businesses
 							"attributes_RestaurantsPriceRange2", # 1~4
 							"is_open", "latitude", "longitude", "review_count_business", "stars" ]
-DATE = ["date", "yelping_since"]
+DATE = ["yelping_since"]
 # format: { "average" / "loud" / "soft" }
 CATEGORICAL = [	"attributes_AgesAllowed", "attributes_Alcohol", "attributes_BYOBCorkage", 
 								"attributes_NoiseLevel", "attributes_RestaurantsAttire", "attributes_Smoking", 
