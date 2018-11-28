@@ -258,8 +258,8 @@ class Preprocess_test(object):
 		self.X_pca = pd.DataFrame(self.pca.transform(self.X), columns=columns, index=self.X.index)
 
 	def export(self):
-		self.X.to_csv("data/pp_test_X_raw")
-		self.X_pca.to_csv("data/pp_test_X_pca")
+		self.X.to_csv("data/pp_test_X_raw.csv")
+		self.X_pca.to_csv("data/pp_test_X_pca.csv")
 
 if __name__ == "__main__":
 	pp_train = Preprocess()
