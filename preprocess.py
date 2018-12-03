@@ -156,8 +156,8 @@ class Preprocess(object):
 	def export(self):
 		self.X.to_csv("data/pp_train_X_raw.csv")
 		self.X_pca.to_csv("data/pp_train_X_pca.csv")
-		self.y.to_csv("data/pp_train_y.csv")
-		dump(self.pca, 'data/pca_dump.joblib') 
+		self.y.to_csv("data/pp_train_y.csv", header=['stars'])
+		dump(self.pca, 'data/pca_dump.joblib')
 
 
 
