@@ -3,17 +3,20 @@
 import pandas as pd
 import numpy as np
 import sys
-import random as rd
-import ast
+import random as rd # for sampling
+import ast # parse shitty object-like strings in business.csv
+import pathlib # mkdir
+
 from sklearn.impute import SimpleImputer
 from sklearn.decomposition import PCA
-from joblib import dump, load
+from joblib import dump, load # save and load the pca object
 
-FILE_REVIEWS = "data/train_reviews.csv"
+
+FILE_TRAIN_REVIEWS = "data/train_reviews.csv"
+FILE_TEST_REVIEWS = "data/test_queries.csv"
 FILE_USERS = "data/users.csv"
 FILE_BUSINESSES = "data/business.csv"
-FILE_TEST = "data/test_queries.csv"
-FILE_OUT_ROOT = "data/pp"
+FILE_OUT_ROOT = "data_pp/"
 
 DROP_REVIEWS = ["cool", "date", "funny", "text", "useful"] # drop all since we don't have this info in the test data
 DROP_USERS = ["name"]
@@ -59,18 +62,19 @@ CATEGORICAL_ONEHOT = ["attributes_Ambience", "attributes_BestNights",
 											"attributes_GoodForMeal", "attributes_HairSpecializesIn", "attributes_Music" ]
 
 class Preprocess(object):
-	def __init__(self):
-		self.reviews = pd.read_csv(FILE_REVIEWS, index_col="review_id")
+	def __init__(self, reviews, y=None, pca=None):
+		self.reviews = reviews
 		self.users = pd.read_csv(FILE_USERS, index_col="user_id")
 		self.businesses = pd.read_csv(FILE_BUSINESSES, index_col="business_id")
-		self.y = self.reviews['stars']
-		self.reviews = self.reviews.drop('stars', axis='columns')
+		self.pca = pca
+		self.y = y
+
 		self.X = []
-		self.pca = None
 		self.X_pca = []
 
+
 	def drop_cols(self):
-		self.reviews = self.reviews.drop(DROP_REVIEWS, axis="columns")
+		self.reviews = self.reviews.drop(DROP_REVIEWS, axis="columns", errors='ignore')
 		self.users = self.users.drop(DROP_USERS, axis="columns")
 		self.businesses = self.businesses.drop(DROP_BUSINESSES, axis="columns")
 
@@ -134,6 +138,16 @@ class Preprocess(object):
 		# finally, transform all fields to float
 		self.X = self.X.apply(lambda x: x.apply(float))
 
+	def fit_to_train_attrs(self, train_X_cols):
+		# print(train_X_cols)
+		# remove extras
+		cols = [col for col in self.X.columns if col in set(train_X_cols)]
+		self.X = self.X[cols]
+		# add missing
+		for col in train_X_cols:
+			if col not in self.X:
+				self.X[col] = 0 # ?
+
 	def impute_numerical(self):
 		imp = SimpleImputer(missing_values=np.nan, strategy='mean')
 		self.X[NUMERICAL] = imp.fit_transform(self.X[NUMERICAL])
@@ -153,133 +167,63 @@ class Preprocess(object):
 		columns = ['pca_%i' % i for i in range(self.pca.n_components)]
 		self.X_pca = pd.DataFrame(self.pca.transform(self.X), columns=columns, index=self.X.index)
 
-	def export(self):
-		self.X.to_csv("data/pp_train_X_raw.csv")
-		self.X_pca.to_csv("data/pp_train_X_pca.csv")
-		self.y.to_csv("data/pp_train_y.csv", header=['stars'])
-		dump(self.pca, 'data/pca_dump.joblib')
+	def export(self, prefix, dump_y=False, dump_pca=False):
+		self.X.to_csv(FILE_OUT_ROOT + "pp_" + prefix + "_X_raw.csv")
+		self.X_pca.to_csv(FILE_OUT_ROOT + "pp_" + prefix + "_X_pca.csv")
+		if dump_y:
+			self.y.to_csv(FILE_OUT_ROOT + "pp_" + prefix + "_y.csv", header=['stars'])
+		if dump_pca:
+			dump(self.pca, FILE_OUT_ROOT + 'pca_dump.joblib')
 
-
-
-
-
-class Preprocess_test(object):
-	def __init__(self):
-		self.X = pd.read_csv(FILE_TEST)
-		self.users = pd.read_csv(FILE_USERS, index_col="user_id")
-		self.businesses = pd.read_csv(FILE_BUSINESSES, index_col="business_id")
-		self.pca = load('data/pca_dump.joblib')
-		self.X_pca = []
-
-	def drop_cols(self):
-		self.users = self.users.drop(DROP_USERS, axis="columns")
-		self.businesses = self.businesses.drop(DROP_BUSINESSES, axis="columns")
-
-	def sample(self, frac_sample, frac_seed):
-		self.X = self.X.sample(frac=frac_sample, random_state=frac_seed)
-
-	def combine_data(self):
-		self.X = self.X.join(self.users, on="user_id", lsuffix="_review", rsuffix="_user")
-		self.X = self.X.join(self.businesses, on="business_id", lsuffix="_review", rsuffix="_business")
-		self.X = self.X.drop(["user_id", "business_id"], axis="columns")
-
-	def transform(self):
-		# elite -> count # years elite
-		self.X.elite = self.X.elite.apply(lambda x: 0 if x == 'None' else len(x.split(',')))
-
-		# friends -> count # friends
-		self.X.friends = self.X.friends.apply(lambda x: 0 if x == 'None' else len(x.split(',')))
-
-		# date -> timestamp
-		for attr in DATE:
-			self.X[attr] = pd.to_datetime(self.X[attr], format="%Y-%m-%d").apply(lambda x: x.timestamp())
-
-		# categorical -> one-hot
-		for attr in CATEGORICAL:
-			for attr_val in self.X[attr].unique():
-				if attr_val != attr_val: # NaN
-					attr_val = 'None'
-				data_vals = self.X[attr].apply(lambda x: 1 if x == attr_val else 0)
-				# print(attr + '_' + attr_val)
-				self.X.insert(len(self.X.columns), attr + '_' + str(attr_val), data_vals)
-			self.X = self.X.drop(attr, axis='columns')
-		# print(self.X)
-
-		# categorical_list (comma-separated) -> one-hot
-		for attr in CATEGORICAL_LIST:
-			attr_vals = set()
-			for s in self.X[attr]:
-				if s != s: continue # NaN
-				attr_vals |= set(s.split(', '))
-			for attr_val in attr_vals:
-				data_vals = self.X[attr].apply(lambda x: 1 if x == x and attr_val in set(x.split(', ')) else 0)
-				self.X.insert(len(self.X.columns), attr + '_' + attr_val, data_vals)
-			self.X = self.X.drop(attr, axis='columns')
-
-		# categorical_onehot (json string) -> one-hot (unpack)
-		for attr in CATEGORICAL_ONEHOT:
-			attr_vals = set()
-			for s in self.X[attr]:
-				if s != s: continue # NaN
-				attr_vals |= set(ast.literal_eval(s).keys())
-			for attr_val in attr_vals:
-				data_vals = self.X[attr].apply(lambda x: 
-					1 if (x == x and 
-								attr_val in ast.literal_eval(x) and 
-								ast.literal_eval(x)[attr_val] == True) 
-								else 0)
-				self.X.insert(len(self.X.columns), attr + '_' + attr_val, data_vals)
-			self.X = self.X.drop(attr, axis='columns')
-
-		# finally, transform all fields to float
-		self.X = self.X.apply(lambda x: x.apply(float))
-
-	def fit_to_train_dimensions(self):
-		train_X_columns = pd.read_csv('data/pp_train_X_raw.csv', index_col='review_id').columns
-		# print(train_X_columns)
-		# remove extras
-		cols = [col for col in self.X.columns if col in set(train_X_columns)]
-		self.X = self.X[cols]
-		# add missing
-		for col in train_X_columns:
-			if col not in self.X:
-				self.X[col] = 0 # ?
-
-	def impute_numerical(self):
-		imp = SimpleImputer(missing_values=np.nan, strategy='mean')
-		self.X[NUMERICAL] = imp.fit_transform(self.X[NUMERICAL])
-
-	def normalize(self):
-		self.X = (self.X - self.X.min()) / (self.X.max() - self.X.min())
-		self.X = self.X.fillna(0)
-
-	def pca_transform(self):
-		columns = ['pca_%i' % i for i in range(self.pca.n_components)]
-		self.X_pca = pd.DataFrame(self.pca.transform(self.X), columns=columns, index=self.X.index)
-
-	def export(self):
-		self.X.to_csv("data/pp_test_X_raw.csv")
-		self.X_pca.to_csv("data/pp_test_X_pca.csv")
 
 if __name__ == "__main__":
-	pp_train = Preprocess()
-	pp_train.drop_cols() # drop irrelevant features
-	pp_train.sample(frac_sample=0.001, frac_seed=1) # sample a portion of the data for testing
-	pp_train.combine_data() # pull in user and business data into each review
-	pp_train.transform() # transform numerical to normalized (?), categorical to one-hot, dates to numerical timestamps
-	pp_train.impute_numerical() # Impute means for numerical data
-	pp_train.normalize()
-	pp_train.pca_fit(20) # principal-component analysis, get top n highest-variance features
-	pp_train.pca_transform()
-	pp_train.export() # write to file
 
-	pp_test = Preprocess_test()
+	# make directory for preprocessed data
+	pathlib.Path(FILE_OUT_ROOT).mkdir(parents=True, exist_ok=True)
+
+	# generate pca for training data
+	print('on training data...')
+	train_reviews_X = pd.read_csv(FILE_TRAIN_REVIEWS, index_col="review_id")
+	train_y = train_reviews_X['stars']
+	train_reviews_X = train_reviews_X.drop('stars', axis='columns')
+	pp_train = Preprocess(train_reviews_X, y=train_y)
+	print('drop_cols...')
+	pp_train.drop_cols() # drop irrelevant features
+	print('sample...')
+	pp_train.sample(frac_sample=0.001, frac_seed=1) # sample a portion of the data for testing
+	print('combine_data...')
+	pp_train.combine_data() # pull in user and business data into each review
+	print('transform...')
+	pp_train.transform() # transform numerical to normalized (?), categorical to one-hot, dates to numerical timestamps
+	print('impute_numerical...')
+	pp_train.impute_numerical() # Impute means for numerical data
+	print('normalize...')
+	pp_train.normalize()
+	print('pca_fit...')
+	pp_train.pca_fit(20) # principal-component analysis, get top n highest-variance features
+	print('pca_transform...')
+	pp_train.pca_transform()
+	print('export...')
+	pp_train.export(prefix='train', dump_y=True, dump_pca=True) # write to file
+
+	# generate pca for test_queries data
+	test_reviews_X = pd.read_csv(FILE_TEST_REVIEWS, index_col=None)
+	pp_test = Preprocess(test_reviews_X, pca=pp_train.pca)
+	print('drop_cols...')
 	pp_test.drop_cols() # drop irrelevant features
-	# pp_test.sample(frac_sample=0.001, frac_seed=1) # sample a portion of the data for testing
+	print('combine_data...')
 	pp_test.combine_data() # pull in user and business data into each review
+	print('transform...')
 	pp_test.transform() # transform numerical to normalized (?), categorical to one-hot, dates to numerical timestamps
-	pp_test.fit_to_train_dimensions() # add missing attrs, drop unsees attrs
+	print('read_csv...')
+	train_X_cols = pd.read_csv(FILE_OUT_ROOT + 'pp_train_X_raw.csv', index_col='review_id').columns
+	print('fit_to_train_attrs...')
+	pp_test.fit_to_train_attrs(train_X_cols) # add missing attrs, drop unseen attrs, wrt trained cols
+	print('impute_numerical...')
 	pp_test.impute_numerical() # Impute means for numerical data
+	print('normalize...')
 	pp_test.normalize()
+	print('pca_transform...')
 	pp_test.pca_transform()
-	pp_test.export() # write to file
+	print('export...')
+	pp_test.export(prefix='test') # write to file
