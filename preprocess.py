@@ -13,12 +13,12 @@ from joblib import dump, load # save and load the pca object
 
 
 FILE_TRAIN_REVIEWS = "data/train_reviews.csv"
-FILE_TEST_REVIEWS = "data/test_queries.csv"
+FILE_QUERY_REVIEWS = "data/test_queries.csv"
 FILE_USERS = "data/users.csv"
 FILE_BUSINESSES = "data/business.csv"
 FILE_OUT_ROOT = "data_pp/"
 
-DROP_REVIEWS = ["cool", "date", "funny", "text", "useful"] # drop all since we don't have this info in the test data
+DROP_REVIEWS = ["cool", "date", "funny", "text", "useful"] # drop all since we don't have this info in the query data
 DROP_USERS = ["name"]
 DROP_BUSINESSES = ["address", "attributes", "name", "postal_code", "hours", "hours_Friday", "hours_Monday", 
 								 "hours_Saturday", "hours_Sunday", "hours_Thursday", "hours_Tuesday", "hours_Wednesday"]
@@ -190,7 +190,7 @@ if __name__ == "__main__":
 	print('drop_cols...')
 	pp_train.drop_cols() # drop irrelevant features
 	print('sample...')
-	pp_train.sample(frac_sample=0.001, frac_seed=1) # sample a portion of the data for testing
+	pp_train.sample(frac_sample=0.001, frac_seed=1) # sample a portion of the data (for dev purposes)
 	print('combine_data...')
 	pp_train.combine_data() # pull in user and business data into each review
 	print('transform...')
@@ -207,23 +207,26 @@ if __name__ == "__main__":
 	pp_train.export(prefix='train', dump_y=True, dump_pca=True) # write to file
 
 	# generate pca for test_queries data
-	test_reviews_X = pd.read_csv(FILE_TEST_REVIEWS, index_col=None)
-	pp_test = Preprocess(test_reviews_X, pca=pp_train.pca)
+	print()
+	print('on query data...')
+	query_reviews_X = pd.read_csv(FILE_QUERY_REVIEWS, index_col=None)
+	query_reviews_X.index.name = 'id'
+	pp_query = Preprocess(query_reviews_X, pca=pp_train.pca)
 	print('drop_cols...')
-	pp_test.drop_cols() # drop irrelevant features
+	pp_query.drop_cols() # drop irrelevant features
 	print('combine_data...')
-	pp_test.combine_data() # pull in user and business data into each review
+	pp_query.combine_data() # pull in user and business data into each review
 	print('transform...')
-	pp_test.transform() # transform numerical to normalized (?), categorical to one-hot, dates to numerical timestamps
+	pp_query.transform() # transform numerical to normalized (?), categorical to one-hot, dates to numerical timestamps
 	print('read_csv...')
 	train_X_cols = pd.read_csv(FILE_OUT_ROOT + 'pp_train_X_raw.csv', index_col='review_id').columns
 	print('fit_to_train_attrs...')
-	pp_test.fit_to_train_attrs(train_X_cols) # add missing attrs, drop unseen attrs, wrt trained cols
+	pp_query.fit_to_train_attrs(train_X_cols) # add missing attrs, drop unseen attrs, wrt trained cols
 	print('impute_numerical...')
-	pp_test.impute_numerical() # Impute means for numerical data
+	pp_query.impute_numerical() # Impute means for numerical data
 	print('normalize...')
-	pp_test.normalize()
+	pp_query.normalize()
 	print('pca_transform...')
-	pp_test.pca_transform()
+	pp_query.pca_transform()
 	print('export...')
-	pp_test.export(prefix='test') # write to file
+	pp_query.export(prefix='query') # write to file
