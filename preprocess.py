@@ -9,8 +9,8 @@ import pathlib # mkdir
 
 from sklearn.impute import SimpleImputer
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 from joblib import dump, load # save and load the pca object
-
 
 FILE_TRAIN_REVIEWS = "data/train_reviews.csv"
 FILE_QUERY_REVIEWS = "data/test_queries.csv"
@@ -62,12 +62,13 @@ CATEGORICAL_ONEHOT = ["attributes_Ambience", "attributes_BestNights",
 											"attributes_GoodForMeal", "attributes_HairSpecializesIn", "attributes_Music" ]
 
 class Preprocess(object):
-	def __init__(self, reviews, y=None, pca=None):
+	def __init__(self, reviews, raw_y=None, pca=None, scaler=None):
 		self.reviews = reviews
 		self.users = pd.read_csv(FILE_USERS, index_col="user_id")
 		self.businesses = pd.read_csv(FILE_BUSINESSES, index_col="business_id")
 		self.pca = pca
-		self.y = y
+		self.scaler = scaler
+		self.raw_y = raw_y
 
 		self.X = []
 		self.X_pca = []
@@ -138,7 +139,7 @@ class Preprocess(object):
 		# finally, transform all fields to float
 		self.X = self.X.apply(lambda x: x.apply(float))
 
-	def fit_to_train_attrs(self, train_X_cols):
+	def fit_cols(self, train_X_cols):
 		# print(train_X_cols)
 		# remove extras
 		cols = [col for col in self.X.columns if col in set(train_X_cols)]
@@ -156,10 +157,19 @@ class Preprocess(object):
 		self.X = (self.X - self.X.min()) / (self.X.max() - self.X.min())
 		self.X = self.X.fillna(0)
 
+	def standardize(self):
+		if self.scaler == None:
+			self.scaler = StandardScaler()
+			self.scaler.fit(self.X)
+		# [print(e) for e in self.X.axes[1]]
+		# self.X = pd.DataFrame(data=self.scaler.fit_transform(self.X), index=self.X.columns)
+		self.X.update(self.scaler.transform(self.X))
+		# [print(e) for e in self.X.axes[1]]
+		self.X = self.X.fillna(0)
+
 	def pca_fit(self, n_attrs):
-		pca = PCA(n_components=n_attrs, svd_solver='auto', random_state=1)
-		data = pca.fit(np.array(self.X))
-		self.pca = pca
+		self.pca = PCA(n_components=n_attrs, svd_solver='auto', random_state=1)
+		data = self.pca.fit(np.array(self.X))
 		# print(data.explained_variance_ratio_)
 		# print(sum(data.explained_variance_ratio_))
 
@@ -167,12 +177,15 @@ class Preprocess(object):
 		columns = ['pca_%i' % i for i in range(self.pca.n_components)]
 		self.X_pca = pd.DataFrame(self.pca.transform(self.X), columns=columns, index=self.X.index)
 
-	def export(self, prefix, dump_y=False, dump_pca=False):
-		self.X.to_csv(FILE_OUT_ROOT + "pp_" + prefix + "_X_raw.csv")
-		self.X_pca.to_csv(FILE_OUT_ROOT + "pp_" + prefix + "_X_pca.csv")
+	def export(self, prefix, dump_y=False, dump_objs=False):
+		self.X.to_csv(FILE_OUT_ROOT + "pp_" + prefix + "_X_raw.csv", index=False)
+		self.X_pca.to_csv(FILE_OUT_ROOT + "pp_" + prefix + "_X_pca.csv", index=False)
 		if dump_y:
-			self.y.to_csv(FILE_OUT_ROOT + "pp_" + prefix + "_y.csv", header=['stars'])
-		if dump_pca:
+			y = self.X.index
+			y = y.to_frame().join(self.raw_y)['stars']
+			y.to_csv(FILE_OUT_ROOT + "pp_" + prefix + "_y.csv", index=False, header=True)
+		if dump_objs:
+			dump(self.scaler, FILE_OUT_ROOT + 'scaler_dump.joblib')
 			dump(self.pca, FILE_OUT_ROOT + 'pca_dump.joblib')
 
 
@@ -186,7 +199,7 @@ if __name__ == "__main__":
 	train_reviews_X = pd.read_csv(FILE_TRAIN_REVIEWS, index_col="review_id")
 	train_y = train_reviews_X['stars']
 	train_reviews_X = train_reviews_X.drop('stars', axis='columns')
-	pp_train = Preprocess(train_reviews_X, y=train_y)
+	pp_train = Preprocess(train_reviews_X, raw_y=train_y)
 	print('drop_cols...')
 	pp_train.drop_cols() # drop irrelevant features
 	print('sample...')
@@ -197,35 +210,33 @@ if __name__ == "__main__":
 	pp_train.transform() # transform numerical to normalized (?), categorical to one-hot, dates to numerical timestamps
 	print('impute_numerical...')
 	pp_train.impute_numerical() # Impute means for numerical data
-	print('normalize...')
-	pp_train.normalize()
+	print('standardize...')
+	pp_train.standardize()
 	print('pca_fit...')
 	pp_train.pca_fit(20) # principal-component analysis, get top n highest-variance features
 	print('pca_transform...')
 	pp_train.pca_transform()
 	print('export...')
-	pp_train.export(prefix='train', dump_y=True, dump_pca=True) # write to file
+	pp_train.export(prefix='train', dump_y=True, dump_objs=True) # write to file
 
 	# generate pca for test_queries data
 	print()
 	print('on query data...')
 	query_reviews_X = pd.read_csv(FILE_QUERY_REVIEWS, index_col=None)
 	query_reviews_X.index.name = 'id'
-	pp_query = Preprocess(query_reviews_X, pca=pp_train.pca)
+	pp_query = Preprocess(query_reviews_X, pca=pp_train.pca, scaler=pp_train.scaler)
 	print('drop_cols...')
 	pp_query.drop_cols() # drop irrelevant features
 	print('combine_data...')
 	pp_query.combine_data() # pull in user and business data into each review
 	print('transform...')
 	pp_query.transform() # transform numerical to normalized (?), categorical to one-hot, dates to numerical timestamps
-	print('read_csv...')
-	train_X_cols = pd.read_csv(FILE_OUT_ROOT + 'pp_train_X_raw.csv', index_col='review_id').columns
-	print('fit_to_train_attrs...')
-	pp_query.fit_to_train_attrs(train_X_cols) # add missing attrs, drop unseen attrs, wrt trained cols
+	print('fit_cols...')
+	pp_query.fit_cols(pp_train.X.columns) # add missing attrs, drop unseen attrs, wrt trained cols
 	print('impute_numerical...')
 	pp_query.impute_numerical() # Impute means for numerical data
-	print('normalize...')
-	pp_query.normalize()
+	print('standardize...')
+	pp_query.standardize()
 	print('pca_transform...')
 	pp_query.pca_transform()
 	print('export...')
