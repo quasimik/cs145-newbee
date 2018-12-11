@@ -62,18 +62,17 @@ CATEGORICAL_ONEHOT = ["attributes_Ambience", "attributes_BestNights",
 											"attributes_GoodForMeal", "attributes_HairSpecializesIn", "attributes_Music" ]
 
 class Preprocess(object):
-	def __init__(self, reviews, raw_y=None, pca=None, scaler=None):
+	def __init__(self, reviews, raw_y=None, pca=None, scaler=None, scaled_attrs=None):
 		self.reviews = reviews
 		self.users = pd.read_csv(FILE_USERS, index_col="user_id")
 		self.businesses = pd.read_csv(FILE_BUSINESSES, index_col="business_id")
 		self.pca = pca
 		self.scaler = scaler
-		self.scaled_attrs = []
+		self.scaled_attrs = scaled_attrs
 		self.raw_y = raw_y
 
 		self.X = []
 		self.X_pca = []
-
 
 	def drop_cols(self):
 		self.reviews = self.reviews.drop(DROP_REVIEWS, axis="columns", errors='ignore')
@@ -204,10 +203,12 @@ class Preprocess(object):
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser(description='Preprocess Yelp reviews.')
-	parser.add_argument('to_process', metavar='P', 
-			choices=['train', 'query', 'both'], default='both', help='data to preprocess')
-	parser.add_argument('train_sample_frac', metavar='F', 
+	parser.add_argument('to_process', metavar='data', 
+			choices=['train', 'query', 'both'], default='both', help='data to preprocess, {train|query|both}')
+	parser.add_argument('train_sample_frac', metavar='frac', 
 			type=float, default=1, help='fraction of training data to process (does not affect query)')
+	parser.add_argument('pca_dims', metavar='pca', 
+			type=int, default=20, help='number of PCA dimensions to generate')
 	args = parser.parse_args()
 
 	# make directory for preprocessed data
@@ -233,7 +234,7 @@ if __name__ == "__main__":
 		print('standardize...')
 		pp_train.standardize()
 		print('pca_fit...')
-		pp_train.pca_fit(20) # principal-component analysis, get top n highest-variance features
+		pp_train.pca_fit(args.pca_dims) # principal-component analysis, get top n highest-variance features
 		print('pca_transform...')
 		pp_train.pca_transform()
 		print('export...')
@@ -245,7 +246,7 @@ if __name__ == "__main__":
 		print('on query data...')
 		query_reviews_X = pd.read_csv(FILE_QUERY_REVIEWS, index_col=None)
 		query_reviews_X.index.name = 'id'
-		pp_query = Preprocess(query_reviews_X, pca=pp_train.pca, scaler=pp_train.scaler)
+		pp_query = Preprocess(query_reviews_X, pca=pp_train.pca, scaler=pp_train.scaler, scaled_attrs=pp_train.scaled_attrs)
 		print('drop_cols...')
 		pp_query.drop_cols() # drop irrelevant features
 		print('combine_data...')
